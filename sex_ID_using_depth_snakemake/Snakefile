@@ -1,0 +1,44 @@
+
+IDS, = glob_wildcards("./{sample}.sorted.bam")
+
+rule all:
+    input:
+        expand("{sample}.chrZ.txt", sample = IDS),
+        expand("{sample}.chrA.txt", sample = IDS),
+        expand("{sample}.sex_ratio.txt", sample = IDS),
+        "sex_ratio_all_samples.txt"
+
+rule make_covZ:
+    input:
+        "{sample}.sorted.bam"
+    output:
+        "{sample}.chrZ.txt"
+    shell:
+        "samtools coverage {input} -r chrZ | tail -n -1 > {output}"
+
+rule make_covA:
+    input:
+        "{sample}.sorted.bam"
+    output:
+        "{sample}.chrA.txt"
+    shell:
+        "samtools coverage {input} -r chr4 | tail -n -1 > {output}"
+
+rule create_ratio:
+    input:
+        "{sample}.chrA.txt", "{sample}.chrZ.txt"
+    output:
+        "{sample}.sex_ratio.txt"
+    shell:
+        """
+        echo {wildcards.sample} > {wildcards.sample}_tmp.txt
+        paste {wildcards.sample}_tmp.txt {input} | awk '{{print($1, $8/$17)}}' > {output}
+        """
+
+rule combine_output:
+    input:
+        expand("{sample}.sex_ratio.txt", sample = IDS)
+    output:
+        "sex_ratio_all_samples.txt"
+    shell:
+        "cat {input} > {output}"
