@@ -1,4 +1,4 @@
-# finch_analysis_curated
+# Imputation code
 A repository of some scripts used to process and analyze low coverage whole-genome sequencing data. The main goal of this is to generate a reference haplotype set using a VCF of individuals sequenced at high coveraged. Then, use this reference panel to impute genotypese on a large panel of individuals sequenced at low (2-3x coverrage).
 
 This is moderately organized, but may be useful for others interested in this approach to lowpass genotyping.
@@ -14,3 +14,5 @@ The second folder takes the informative sites in the reference panel and imputes
 The output is a phased and imputated VCF file for all low coverage individuals
 
 In order to phase samples in the reference panel on chrZ, we only used male samples. These were identified using the snakemake pipeline in sex_ID_using_depth_snakemake. This requires samtools https://github.com/samtools/samtools and compares sequencing depth on chr4 (a moderately sized chromosome) to that on chrZ - producing the output per sample with the ratio of Z to 4 sequencing depth. 
+
+# Other analysis code
