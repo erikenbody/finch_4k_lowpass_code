@@ -16,3 +16,8 @@ The output is a phased and imputated VCF file for all low coverage individuals
 In order to phase samples in the reference panel on chrZ, we only used male samples. These were identified using the snakemake pipeline in sex_ID_using_depth_snakemake. This requires samtools https://github.com/samtools/samtools and compares sequencing depth on chr4 (a moderately sized chromosome) to that on chrZ - producing the output per sample with the ratio of Z to 4 sequencing depth. 
 
 # Other analysis code
+
+Code used as part of manuscript in review "Large effect loci have a prominent role in Darwin’s finch evolution"
+
+bioRxiv preprint:
+https://www.biorxiv.org/content/10.1101/2022.10.29.514326v1
