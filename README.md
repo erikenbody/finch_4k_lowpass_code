@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/358115636.svg)](https://zenodo.org/badge/latestdoi/358115636)
+
 # Imputation code
 A repository of some scripts used to process and analyze low coverage whole-genome sequencing data. The main goal of this is to generate a reference haplotype set using a VCF of individuals sequenced at high coveraged. Then, use this reference panel to impute genotypese on a large panel of individuals sequenced at low (2-3x coverrage).
 
