@@ -7,6 +7,7 @@ library(cowplot)
 library(grid)
 library(gridExtra)
 library(ggtext)
+library(ggpubr)
 
 fort.color <- '#0072B2'
 magn.color <- '#E69F00'
@@ -29,6 +30,8 @@ df.all.genos <- df.all.genos %>%
                        ifelse(Sex ==2, "Female", NA))) %>% 
   mutate(munch.sex = ifelse(is.na(genetic.sex) & !is.na(Sex2), as.character(Sex2), as.character(genetic.sex)))
 
+
+head(df.all.genos)
 df.dap.genos <- df.all.genos %>% filter(Island == "Daphne")
 
 df.dap.genos.num <- df.dap.genos 
@@ -36,6 +39,44 @@ df.dap.genos.num[df.dap.genos.num=="AB"]<-2
 df.dap.genos.num[df.dap.genos.num=="AA"]<-1
 df.dap.genos.num[df.dap.genos.num=="BB"]<-3
 
+#df.finch.sub %>% ggplot() + geom_boxplot(aes(x = ALX1.simple, y = resid.bill.PC2))
+df.dap.genos %>% 
+  filter(grm_cluster == "cluster2") %>% 
+  filter(!is.na(chr5_mds5)) %>% 
+  ggplot(aes(x = chr5_mds5, y = bill.PC2.sp)) + 
+  geom_boxplot() +
+  geom_jitter(width = 0.2)
+
+df.dap.genos %>% 
+  filter(grm_cluster == "cluster2") %>% 
+  filter(!is.na(chr5_genotype)) %>% 
+  ggplot(aes(x = chr5_genotype, y = bill.PC2.sp)) + 
+  geom_boxplot() +
+  geom_jitter(width = 0.2)
+
+df.tmp <- df.dap.genos %>% filter(Species == "fortis")
+summary(lm(df.tmp$bill.PC2.sp ~ df.tmp$ALX1.simple))
+eta_squared(lm(df.tmp$bill.PC1.sp ~ df.tmp$ALX1.simple))
+
+m.PC2 <- lm(bill.PC2.sp ~ ALX1.simple + HMGA2.simple, data = df.tmp, na.action = na.exclude)
+A.PC2 <- car::Anova(m.PC2, type = 3, singular.ok = T)
+eta.PC2 <- eta_squared(A.PC2, partial = F, alternative = "two.sided")
+
+df.tmp %>% 
+  ggplot(aes(x = ALX1.geno, y = bill.PC2.sp)) + 
+  geom_boxplot() +
+  geom_jitter(width = 0.2)
+
+df.tmp %>% 
+  ggplot(aes(x = bill.PC1.sp, y = bill.PC2.sp)) + 
+  geom_point()
+
+# loci  ------------------------------------------------------------------
+
+#gwas_loci <- c("gwas_genotype_chr1_1", "gwas_genotype_chr1A_19", "ALX1.simple",
+#       "HMGA2.simple", "gwas_genotype_chr2_21", 
+#       "gwas_genotype_chr9_23")
+#V2
 gwas_loci <- c("gwas_genotype_chr1_2_ext", "gwas_genotype_chr1A_17", "ALX1.simple",
                "HMGA2.simple", "gwas_genotype_chr2_18_ext", 
                "gwas_genotype_chr9_20")
@@ -47,12 +88,16 @@ asm28loci.minus.gwas <- grep(paste(c("_1$","_3","_7","_27"), collapse="|"), asm2
 
 all_loci <- c(gwas_loci, asm28loci.minus.gwas)
 
+#some loci highly collinear in scandens
+scandens_loci <- all_loci[-c(7,8)]
+
 #hand curated by LD profile and highest pvalue SNP in fortis gwas
+#added chr2_20 
 ld_filt_loc <- c(gwas_loci, "asm28loci_chr2_10", "asm28loci_chr2_12","asm28loci_chr2_17",
                  "asm28loci_chr2_19","asm28loci_chr2_20","asm28loci_chr3_22", "asm28loci_chr3_24", "asm28loci_chr5_25",
                  "asm28loci_chr7_26", "asm28loci_chr25_28")
 
-##tibble(locus = ld_filt_loc) %>% write_csv("output/GEMMA/effect_sizes/ld_prune_locus_names.csv")
+tibble(locus = ld_filt_loc) %>% write_csv("output/GEMMA/effect_sizes/ld_prune_locus_names.csv")
 
 ld_filt_loc.names <- read.csv("output/GEMMA/effect_sizes/ld_prune_locus_names_edit.csv")
 
@@ -74,7 +119,7 @@ calc_es_with_ancestry <- function(species, target_loci, output.name, cluster = N
   }
   
   df.finch.sub <- df.finch %>% 
-    select("weight","bill.length", "bill.depth", "bill.width",
+    dplyr::select("weight","bill.length", "bill.depth", "bill.width",
            all_of(target_loci), "anc_fort", "anc_scan", "anc_mag", "anc_fuli")
   
   rownames(df.finch.sub) <- df.finch$meaningful.unique
@@ -185,7 +230,7 @@ calc_es_with_ancestry <- function(species, target_loci, output.name, cluster = N
   
   df.finch.sub2 <- df.finch.sub
   df.finch.sub2 <- df.finch.sub2 %>% 
-    select(all_of(target_loci))
+    dplyr::select(all_of(target_loci))
   df.finch.sub2$index <- 1:nrow(df.finch.sub2)
   
   #df.finch.sub2$genotype <- df.finch.sub2$HMGA2.simple
@@ -215,7 +260,17 @@ calc_es_with_ancestry <- function(species, target_loci, output.name, cluster = N
            bAF = af.B,
            minGF = min(q, p))
   
-   df.effect.sizePCs <- left_join(df.effect.sizePCs, df.freq.haps[,c("locus","MAF","bAF", "minGF")], by = "locus")
+  #not sure that var accurately represents variation. using MAF inestead
+  #df.var <- data.frame(locus = target_loci)
+  #row.names(df.var) <- df.var$locus
+  #df.var$var <- as.character(rep(NA, length(target_loci)))
+  #
+  #for (loc in target_loci){
+  #  df.var[loc,"var"] <- round(var(df.finch.sub[,loc], na.rm = T), 4)
+  #}
+  
+  #df.effect.sizePCs <- left_join(df.effect.sizePCs, df.var, by = "locus")
+  df.effect.sizePCs <- left_join(df.effect.sizePCs, df.freq.haps[,c("locus","MAF","bAF", "minGF")], by = "locus")
   
   miss_af <- df.freq.haps %>% filter(!locus %in% target_loci2) %>% select("locus","MAF","bAF", "minGF")
   # -------------------------------------------------------------------------
@@ -269,6 +324,14 @@ calc_es_with_ancestry <- function(species, target_loci, output.name, cluster = N
   list.plots <- list()
   
   for (genotype in target_loci){
+    #df.locus.es <- df.effect.sizePCs %>% 
+    #  filter(locus == genotype & grepl("PC1", phenotype))
+    #
+    #df.locus.mean <- df.locus.es %>% 
+    #  filter(!grepl("high", phenotype) & !grepl("low", phenotype) & 
+    #           !grepl(" p", phenotype) & !grepl("var", phenotype))
+    #df.locus.high <- df.locus.es %>% filter(grepl("high", phenotype))
+    #df.locus.low <- df.locus.es %>% filter(grepl("low", phenotype))
     
     list.plots[[genotype]] <- df.finch.sub %>% 
       filter(!is.na(get(genotype))) %>% 
@@ -324,7 +387,13 @@ calc_es_with_ancestry("fortis", gwas_loci, "gwas_loci_with_ancestry", "cluster1"
 calc_es_with_ancestry("scandens", gwas_loci, "gwas_loci_with_ancestry", "cluster2", "anc_fort", "anc_fuli")
 
 # -------------------------------------------------------------
-
+species<-"fortis"
+cluster<-"cluster1"
+target_loci <- gwas_loci
+output.name<-"test"
+ancfilt = FALSE
+resid=FALSE
+sex=F
 plot_effect_size <- function(species, target_loci, output.name, cluster = NA, ancfilt = NA, resid = FALSE, sex = TRUE){
   
   df.finch <- df.dap.genos.num %>% filter(Species == species)
@@ -357,7 +426,7 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   }
   
   df.finch.sub <- df.finch %>% 
-    select("weight","bill.length", "munch.sex", "bill.depth", "bill.width",
+    dplyr::select("weight","bill.length", "munch.sex", "bill.depth", "bill.width",
            all_of(target_loci))
   
   rownames(df.finch.sub) <- df.finch$meaningful.unique
@@ -375,6 +444,9 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   df.finch.sub$bill.PC2 <- df.finch.sub$PC2
   df.finch.sub$bill.PC3 <- df.finch.sub$PC3
   
+  df.finch.sub <- df.finch.sub %>% 
+    mutate(bill.size = bill.length + bill.depth + bill.width,
+           bill.shape = bill.length/bill.depth)
 
   # orient PCs so that they are positive correlated with beak propor --------
 
@@ -390,9 +462,23 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
            bill.PC2 = ifelse(rep(corr_PC2, nrow(df.finch.sub)) < 0, bill.PC2*-1, bill.PC2))
   
   df.finch.sub %>% 
-    ggplot() + geom_point(aes(x = bill.PC2, y = bill.length/bill.depth))
+    ggplot(aes(x = bill.PC2, y = bill.length/bill.depth)) + 
+    geom_point() +
+    stat_regline_equation(label.x = max(df.finch.sub$PC2)/3, 
+                          label.y = max(df.finch.sub$bill.length/df.finch.sub$bill.depth), 
+                          aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~")), formula = y ~ x)
   
   ggsave(paste0("output/GEMMA/effect_sizes/PCs_effect_size_custom_",species,"_",output.name,"_PC2_len_dep.pdf"), 
+         width = 8, height = 6)
+  
+  df.finch.sub %>% 
+    ggplot(aes(x = bill.PC1, y = bill.length + bill.depth + bill.width)) + 
+    geom_point() +
+    stat_regline_equation(label.x = max(df.finch.sub$PC1)/3, 
+                          label.y = max(df.finch.sub$bill.length + df.finch.sub$bill.depth +df.finch.sub$bill.width), 
+                          aes(label =  paste(..eq.label.., ..rr.label.., sep = "~~~")), formula = y ~ x)
+  
+  ggsave(paste0("output/GEMMA/effect_sizes/PCs_effect_size_custom_",species,"_",output.name,"_PC1_size.pdf"), 
          width = 8, height = 6)
   
   if(resid == TRUE & sex == TRUE){
@@ -403,6 +489,10 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
     df.finch.sub$bill.length <- resid(lm(bill.length ~ weight + munch.sex, data = df.finch.sub, na.action = na.exclude))
     df.finch.sub$bill.depth <- resid(lm(bill.depth ~ weight + munch.sex, data = df.finch.sub, na.action = na.exclude))
     df.finch.sub$bill.width <- resid(lm(bill.width ~ weight + munch.sex, data = df.finch.sub, na.action = na.exclude))
+    
+    df.finch.sub$bill.size <- resid(lm(bill.size ~ weight + munch.sex, data = df.finch.sub, na.action = na.exclude))
+    df.finch.sub$bill.shape <- resid(lm(bill.shape ~ weight + munch.sex, data = df.finch.sub, na.action = na.exclude))
+    
   }
   
   if(resid == TRUE & sex == FALSE){
@@ -413,7 +503,16 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
     df.finch.sub$bill.length <- resid(lm(bill.length ~ weight, data = df.finch.sub, na.action = na.exclude))
     df.finch.sub$bill.depth <- resid(lm(bill.depth ~ weight, data = df.finch.sub, na.action = na.exclude))
     df.finch.sub$bill.width <- resid(lm(bill.width ~ weight, data = df.finch.sub, na.action = na.exclude))
+    
+    df.finch.sub$bill.size <- resid(lm(bill.size ~ weight, data = df.finch.sub, na.action = na.exclude))
+    df.finch.sub$bill.shape <- resid(lm(bill.shape ~ weight, data = df.finch.sub, na.action = na.exclude))
   }
+  
+  
+  #df.finch.sub %>% 
+  #  ggplot(aes(x = gwas_genotype_chr1_1, y = bill.PC2)) + 
+  #  geom_boxplot() +
+  #  geom_jitter(width = .2)
   
   # plot effect sizes -------------------------------------------------------
   
@@ -451,12 +550,22 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   A.weight <- car::Anova(m.weight, type = 3, singular.ok = T)
   eta.weight <- eta_squared(A.weight, partial = F, alternative = "two.sided")
   
+  m.size <- lm(paste("bill.size ~ ", lmvars, sep = ""), data = df.finch.sub, na.action = na.exclude)
+  A.size <- car::Anova(m.size, type = 3, singular.ok = T)
+  eta.size <- eta_squared(m.size, partial = F, alternative = "two.sided")
+  
+  m.shape <- lm(paste("bill.shape ~ ", lmvars, sep = ""), data = df.finch.sub, na.action = na.exclude)
+  A.shape <- car::Anova(m.shape, type = 3, singular.ok = T)
+  eta.shape <- eta_squared(m.shape, partial = F, alternative = "two.sided")
+  
   # add sign to es ----------------------------------------------------------
   #get coefficients for PC1 and PC2
   df.coef <- tibble(locus.mod = names(m.PC1$coefficients),
                     coef = m.PC1$coefficients,
                     coef2 = m.PC2$coefficients,
-                    coef3 = m.weight$coefficients)
+                    coef3 = m.weight$coefficients,
+                    coef4 = m.size$coefficients,
+                    coef5 = m.shape$coefficients)
   
   df.coef$locus <- str_sub(df.coef$locus.mod,1,nchar(df.coef$locus.mod)-1)
   
@@ -465,14 +574,20 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
     group_by(locus) %>% 
     summarise(sum.coef = sum(coef),
               sum.coef2 = sum(coef2),
-              sum.coef3 = sum(coef3)) %>% 
+              sum.coef3 = sum(coef3),
+              sum.coef4 = sum(coef4),
+              sum.coef5 = sum(coef5)) %>% 
     mutate(sign = ifelse(sum.coef >= 0, "+",
                          ifelse(sum.coef <0, "-", NA))) %>% 
     mutate(sign2 = ifelse(sum.coef2 >= 0, "+",
                          ifelse(sum.coef2 <0, "-", NA))) %>% 
     mutate(sign3 = ifelse(sum.coef3 >= 0, "+",
                           ifelse(sum.coef3 <0, "-", NA))) %>% 
-    select(-sum.coef, -sum.coef2, -sum.coef3)
+    mutate(sign4 = ifelse(sum.coef4 >= 0, "+",
+                          ifelse(sum.coef4 <0, "-", NA))) %>% 
+    mutate(sign5 = ifelse(sum.coef5 >= 0, "+",
+                          ifelse(sum.coef5 <0, "-", NA))) %>% 
+    dplyr::select(-sum.coef, -sum.coef2, -sum.coef3, -sum.coef4, -sum.coef5)
   
   # three dimensions --------------------------------------------------------
   
@@ -510,12 +625,22 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
                               `Weight` = eta.weight$Eta2,
                               `Weight low` = eta.weight$CI_low,
                               `Weight high` = eta.weight$CI_high,
+                              `Bill Size` = eta.size$Eta2,
+                              `Bill Size low` = eta.size$CI_low,
+                              `Bill Size high` = eta.size$CI_high,
+                              `Bill Shape` = eta.shape$Eta2,
+                              `Bill Shape low` = eta.shape$CI_low,
+                              `Bill Shape high` = eta.shape$CI_high,
                               `Bill PC1 p` = A.PC1$`Pr(>F)`[2:(length(target_loci2)+1)],
                               `Bill PC2 p` = A.PC2$`Pr(>F)`[2:(length(target_loci2)+1)],
                               `Weight p` = A.weight$`Pr(>F)`[2:(length(target_loci2)+1)],
+                              `Bill Size p` = A.size$`Pr(>F)`[2:(length(target_loci2)+1)],
+                              `Bill Shape p` = A.shape$`Pr(>F)`[2:(length(target_loci2)+1)],
                               locus = target_loci2,
                               `Bill PC1 var` = rep(var(df.finch.sub$bill.PC1), length(target_loci2)),
-                              `Bill PC2 var` = rep(var(df.finch.sub$bill.PC2), length(target_loci2))
+                              `Bill PC2 var` = rep(var(df.finch.sub$bill.PC2), length(target_loci2)),
+                              `Bill Size var` = rep(var(df.finch.sub$bill.size), length(target_loci2)),
+                              `Bill Shape var` = rep(var(df.finch.sub$bill.shape), length(target_loci2))
   ) 
   #add sign
   
@@ -528,7 +653,7 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   
   df.finch.sub2 <- df.finch.sub
   df.finch.sub2 <- df.finch.sub2 %>% 
-    select(all_of(target_loci))
+    dplyr::select(all_of(target_loci))
   df.finch.sub2$index <- 1:nrow(df.finch.sub2)
   
   #df.finch.sub2$genotype <- df.finch.sub2$HMGA2.simple
@@ -539,7 +664,7 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   
   df.finch.sub2.long <- df.finch.sub2 %>% 
     pivot_longer(cols = -index, values_to = "genotype", names_to = "locus") %>% 
-    select(-index)
+    dplyr::select(-index)
   
   
   df.freq <- df.finch.sub2.long %>% group_by(locus, genotype) %>% 
@@ -558,11 +683,22 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
            bAF = af.B,
            minGF = min(q, p))
   
+  #not sure that var accurately represents variation. using MAF inestead
+  #df.var <- data.frame(locus = target_loci)
+  #row.names(df.var) <- df.var$locus
+  #df.var$var <- as.character(rep(NA, length(target_loci)))
+  #
+  #for (loc in target_loci){
+  #  df.var[loc,"var"] <- round(var(df.finch.sub[,loc], na.rm = T), 4)
+  #}
+  
+  #df.effect.sizePCs <- left_join(df.effect.sizePCs, df.var, by = "locus")
   df.effect.sizePCs <- left_join(df.effect.sizePCs, df.freq.haps[,c("locus","MAF","bAF", "minGF")], by = "locus")
 
-  miss_af <- df.freq.haps %>% filter(!locus %in% target_loci2) %>% select("locus","MAF","bAF", "minGF")
+  miss_af <- df.freq.haps %>% filter(!locus %in% target_loci2) %>% dplyr::select("locus","MAF","bAF", "minGF")
   # -------------------------------------------------------------------------
 
+  
   #update sign iteratively
   df.effect.sizePCs <- left_join(df.effect.sizePCs, df.coef.sign, by = "locus")
   
@@ -581,28 +717,41 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
     filter(grepl("Weight", phenotype) & !grepl(" p", phenotype) & !grepl("var", phenotype)) %>% 
     mutate(parameter = ifelse(sign3 == "-", parameter * -1, parameter))
   
+  
+  #update sign size
+  df.effect.sizePCs_D <- df.effect.sizePCs %>% 
+    filter(grepl("Size", phenotype) & !grepl(" p", phenotype) & !grepl("var", phenotype)) %>% 
+    mutate(parameter = ifelse(sign4 == "-", parameter * -1, parameter))
+  
+  #update sign shape
+  df.effect.sizePCs_E <- df.effect.sizePCs %>% 
+    filter(grepl("Shape", phenotype) & !grepl(" p", phenotype) & !grepl("var", phenotype)) %>% 
+    mutate(parameter = ifelse(sign5 == "-", parameter * -1, parameter))
+  
   #extract p values
   df.effect.sizePCs_p <- df.effect.sizePCs %>% 
     filter(grepl(" p", phenotype) |  grepl("var", phenotype)) 
   
   #recombine 3 dfs
-  df.effect.sizePCs <- rbind(df.effect.sizePCs_A, df.effect.sizePCs_B, df.effect.sizePCs_C, df.effect.sizePCs_p) %>% 
-    select(-sign, -sign2, -sign3)
+  df.effect.sizePCs <- rbind(df.effect.sizePCs_A, df.effect.sizePCs_B, df.effect.sizePCs_C, df.effect.sizePCs_D, df.effect.sizePCs_E, df.effect.sizePCs_p) %>% 
+    dplyr::select(-sign, -sign2, -sign3, -sign4, -sign5)
   
-  p2 <- df.effect.sizePCs %>% 
+  df.effect.sizePCs_4plot <- df.effect.sizePCs %>% 
     filter(!grepl("high", phenotype) & !grepl("low", phenotype)) %>% 
-    filter(!grepl(" p", phenotype) & !grepl("var", phenotype)) %>% 
+    filter(!grepl(" p", phenotype) & !grepl("var", phenotype)) 
+  
+  p2 <- df.effect.sizePCs_4plot %>% 
     ggplot(aes(label = round(parameter, 2),x = locus, y = phenotype, fill = parameter)) + 
-    geom_tile() +
-    geom_text() +
-    scale_fill_gradient(low = "yellow", high = "red", na.value = NA,
-                        limits = c(0,.20)) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90),
-          axis.title = element_blank(),
-          panel.grid.major = element_blank(), 
-          panel.grid.minor = element_blank(),
-          legend.position = "none")
+      geom_tile() +
+      geom_text() +
+      scale_fill_gradient(low = "yellow", high = "red", na.value = NA,
+                          limits = c(min(df.effect.sizePCs_4plot$parameter),max(df.effect.sizePCs_4plot$parameter))) +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90),
+            axis.title = element_blank(),
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(),
+            legend.position = "none")
   
   #p1/p2
   #ggsave(paste0("output/GEMMA/effect_size_custom_",species,"_long.pdf"), width = 8, height = 2)
@@ -613,7 +762,15 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   list.plots <- list()
   
   for (genotype in target_loci){
-       
+    #df.locus.es <- df.effect.sizePCs %>% 
+    #  filter(locus == genotype & grepl("PC1", phenotype))
+    #
+    #df.locus.mean <- df.locus.es %>% 
+    #  filter(!grepl("high", phenotype) & !grepl("low", phenotype) & 
+    #           !grepl(" p", phenotype) & !grepl("var", phenotype))
+    #df.locus.high <- df.locus.es %>% filter(grepl("high", phenotype))
+    #df.locus.low <- df.locus.es %>% filter(grepl("low", phenotype))
+    
     list.plots[[genotype]] <- df.finch.sub %>% 
       filter(!is.na(get(genotype))) %>% 
       ggplot(aes_string(x = genotype, y = "bill.PC1")) +
@@ -646,12 +803,22 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
                               `Weight` = 0,
                               `Weight low` = 0,
                               `Weight high` = 0,
+                              `Bill Size` = 0,
+                              `Bill Size low` = 0,
+                              `Bill Size high` = 0,
+                              `Bill Shape` = 0,
+                              `Bill Shape low` = 0,
+                              `Bill Shape high` = 0,
                               `Bill PC1 p` = NA,
                               `Bill PC2 p` = NA,
+                              `Bill Size p` = NA,
+                              `Bill Shape p` = NA,
                               `Weight p` = NA,
                               locus = miss_af$locus,
                               `Bill PC1 var` = rep(var(df.finch.sub$bill.PC1), nrow(miss_af)),
-                              `Bill PC2 var` = rep(var(df.finch.sub$bill.PC2), nrow(miss_af))
+                              `Bill PC2 var` = rep(var(df.finch.sub$bill.PC2), nrow(miss_af)),
+                              `Bill Size var` = rep(var(df.finch.sub$bill.size), nrow(miss_af)),
+                              `Bill Shape var` = rep(var(df.finch.sub$bill.shape), nrow(miss_af)),
   ) 
   
   df.effect.sizePCs.wide <- rbind(df.effect.sizePCs.wide, df_null)
@@ -659,11 +826,45 @@ plot_effect_size <- function(species, target_loci, output.name, cluster = NA, an
   df.effect.sizePCs.wide$`Bill PC1 p.adjust` <- p.adjust(df.effect.sizePCs.wide$`Bill PC1 p`, method = "BH")
   df.effect.sizePCs.wide$`Bill PC2 p.adjust` <- p.adjust(df.effect.sizePCs.wide$`Bill PC2 p`, method = "BH")
   df.effect.sizePCs.wide$`Weight p.adjust` <- p.adjust(df.effect.sizePCs.wide$`Weight p`, method = "BH")
+  df.effect.sizePCs.wide$`Bill Size p.adjust` <- p.adjust(df.effect.sizePCs.wide$`Bill Size p`, method = "BH")
+  df.effect.sizePCs.wide$`Bill Shape p.adjust` <- p.adjust(df.effect.sizePCs.wide$`Bill Shape p`, method = "BH")
   
   write_csv(df.effect.sizePCs.wide, paste0("output/GEMMA/effect_sizes/PCs_effect_size_custom_",species,"_",output.name,"_es.csv"))
   
+  es <- left_join(df.effect.sizePCs.wide, ld_filt_loc.names, by = "locus")
+  
+  # relate PC ESs to morph
+  pv1 <- es %>% 
+    mutate(locus = tidy_locus) %>% 
+    ggplot() + 
+      geom_point(aes(x = `Bill PC1`, y = `Bill Size`, color = locus), size = 2) +
+    labs(x = "Effect Size: Bill PC1", y = "Effect Size: Bill Size")
+  
+  pv2 <- es %>% 
+    mutate(locus = tidy_locus) %>% 
+    ggplot() + 
+    geom_point(aes(x = `Bill PC2`, y = `Bill Shape`, color = locus), size = 2) +
+    labs(x = "Effect Size: Bill PC2", y = "Effect Size: Bill Shape")
+  
+  pv1 / pv2
+  ggsave(paste0("output/GEMMA/effect_sizes/compare_ES_PCs_to_morph_",species,"_",output.name,"_scatter.png"), width = 8, height = 6)
+  
+  
+  
 }
 
+plot_effect_size("fortis", gwas_loci, "gwas_loci")
+plot_effect_size("scandens", gwas_loci, "gwas_loci")
+plot_effect_size("magnirostris", gwas_loci, "gwas_loci")
+plot_effect_size("fuliginosa", gwas_loci, "gwas_loci")
+
+plot_effect_size("fortis", gwas_loci, "gwas_loci_residuals", resid = TRUE)
+plot_effect_size("scandens", gwas_loci, "gwas_loci_residuals", resid = TRUE)
+
+plot_effect_size("fortis", ld_filt_loc , "ld_prune")
+plot_effect_size("scandens", ld_filt_loc , "ld_prune")
+plot_effect_size("magnirostris", ld_filt_loc , "ld_prune")
+plot_effect_size("fuliginosa", ld_filt_loc , "ld_prune")
 
 plot_effect_size("fortis", gwas_loci , "gwas_loci", "cluster1")
 plot_effect_size("scandens", gwas_loci , "gwas_loci", "cluster2")
@@ -676,9 +877,14 @@ plot_effect_size("magnirostris", ld_filt_loc , "ld_prune", "cluster3")
 plot_effect_size("fortis", gwas_loci , "gwas_loci", "cluster1", TRUE)
 plot_effect_size("scandens", gwas_loci , "gwas_loci", "cluster2", TRUE)
 
+#plot_effect_size("fortis", "chr5_mds5", "chr5_mds5", "cluster1")
+#plot_effect_size("scandens", "chr5_mds5", "chr5_mds5", "cluster2")
+
 plot_effect_size("fortis", gwas_loci, "gwas_loci_residuals","cluster1", resid = TRUE)
 plot_effect_size("scandens", gwas_loci, "gwas_loci_residuals", "cluster2", resid = TRUE)
 plot_effect_size("magnirostris", gwas_loci, "gwas_loci_residuals", "cluster3", resid = TRUE)
+
+plot_effect_size("fortis", gwas_loci, "gwas_loci_residuals_nosex","cluster1", resid = TRUE, sex = FALSE)
 
 # -------------------------------------------------------------------------
 
@@ -743,6 +949,19 @@ plot_ef("output/GEMMA/effect_sizes/PCs_effect_size_custom_magnirostris_gwas_loci
 plot_ef("output/GEMMA/effect_sizes/PCs_effect_size_custom_fuliginosa_gwas_loci_es.csv", "fuliginosa_gwas_loci_es_noresid")
 
 # all species -------------------------------------------------------------
+
+es_for <- read.csv("output/GEMMA/effect_sizes/PCs_effect_size_custom_fortis_gwas_loci_es.csv")
+es_for$Species <- "fortis"
+es_sca <- read.csv("output/GEMMA/effect_sizes/PCs_effect_size_custom_scandens_gwas_loci_es.csv")
+es_sca$Species <- "scandens"
+es_mag <- read.csv("output/GEMMA/effect_sizes/PCs_effect_size_custom_magnirostris_gwas_loci_es.csv")
+es_mag$Species <- "magnirostris"
+es_ful <- read.csv("output/GEMMA/effect_sizes/PCs_effect_size_custom_fuliginosa_gwas_loci_es.csv")
+es_ful$Species <- "fuliginosa"
+
+df.es.wide <- rbind(es_for, es_sca, es_mag, es_ful) %>% 
+  filter(Species!="fuliginosa")
+
 
 plot_multispecies_es <- function(df.in, output.name){
   df.es.wide <- df.in
@@ -906,12 +1125,12 @@ df.es.wide_clusters %>%
 
 df.es.wide_clusters %>% 
   filter(locus != "HMGA2.simple" & Species == "fortis") %>% 
-  select(Species, locus, Bill.PC1, Bill.PC2) %>% 
+  dplyr::select(Species, locus, Bill.PC1, Bill.PC2) %>% 
   arrange(Bill.PC1)
 
 df.es.wide_clusters %>% 
   filter(locus == "HMGA2.simple") %>% 
-  select(Species, Bill.PC1, Bill.PC2)
+  dplyr::select(Species, Bill.PC1, Bill.PC2)
 
 
 # plot just cluster 1 -----------------------------------------------------
@@ -989,7 +1208,7 @@ df.es.wide_clusters_residuals %>%
 
 df.es.wide_clusters_residuals %>% 
   filter(Species == "fortis") %>% 
-  select(Species, locus, Bill.PC1, Bill.PC2) %>% 
+  dplyr::select(Species, locus, Bill.PC1, Bill.PC2) %>% 
   arrange(Bill.PC1)
 
 
@@ -1175,3 +1394,398 @@ df.comp1 %>%
   geom_errorbarh(aes(xmin = Bill.PC1.low.x,xmax = Bill.PC1.high.x)) +
   theme(legend.title = element_blank())
 ggsave("output/GEMMA/effect_sizes/effect_size_residuals_with_or_without_sex.png",width = 6, height = 6)
+
+
+# scatter plot ------------------------------------------------------------
+
+head(df.es.wide)
+
+df.es.wide %>% 
+  filter(Species == "fortis") %>% 
+  ggplot(aes(y = Bill.PC1, x = MAF,
+                       ymin = Bill.PC1.low, ymax = Bill.PC1.high,
+                       color = Species, fill = Species)) +
+  geom_errorbar(width=.001, position = position_dodge(width=0.65)) +
+  geom_point(position = position_dodge(width=0.65), size = 2) +
+  theme_bw() +
+  theme(text=element_text(size=18, color="black"))+
+  labs(y = "Beak Size Effect Size", x = "MAF") +
+  scale_color_manual(values = c(fort.color)) +
+  theme(legend.position = "none") +
+  scale_shape_manual(values = c(8)) +
+  xlim(-0.010,0.5)
+
+df.es.wide %>% 
+  filter(locus == "HMGA2.simple") %>% 
+  ggplot(aes(y = Bill.PC1, x = MAF,
+             ymin = Bill.PC1.low, ymax = Bill.PC1.high,
+             color = Species, fill = Species)) +
+  geom_errorbar(width=.001, position = position_dodge(width=0.65)) +
+  geom_point(position = position_dodge(width=0.65), size = 3) +
+  geom_line(aes(group = locus), color = "grey70") + 
+  theme_bw() +
+  theme(text=element_text(size=25, color="black"))+
+  labs(y = "Beak Size Effect Size", x = "MAF") +
+  scale_color_manual(values = c(magn.color, scan.color, fort.color)) +
+  theme(legend.position = "none") +
+  scale_shape_manual(values = c(19,8)) +
+  xlim(-0.010,0.5)
+ggsave("output/GEMMA/effect_size/hmga2_locus_lines_MAF.png", width = 8, height = 6)
+
+df.es.wide %>% 
+  filter(locus == "ALX1.simple") %>% 
+  ggplot(aes(y = Bill.PC2, x = MAF,
+             ymin = Bill.PC2.low, ymax = Bill.PC2.high,
+             color = Species, fill = Species)) +
+  geom_errorbar(width=.001, position = position_dodge(width=0.65)) +
+  geom_point(position = position_dodge(width=0.65), size = 3) +
+  geom_line(aes(group = locus), color = "grey70") + 
+  theme_bw() +
+  theme(text=element_text(size=25, color="black"))+
+  labs(y = "Beak Shape Effect Size", x = "MAF") +
+  scale_color_manual(values = c(magn.color, scan.color, fort.color)) +
+  theme(legend.position = "none") +
+  scale_shape_manual(values = c(19,8)) +
+  xlim(-0.010,0.5)
+ggsave("output/GEMMA/effect_size/alx1_locus_lines_MAF.png", width = 8, height = 6)
+
+
+# add variance? -----------------------------------------------------------
+
+
+
+df.es.wide %>% 
+  select(Species, Bill.PC1.var, Bill.PC2.var) %>% unique()
+
+df.dap.genos.num %>% 
+  group_by(Species) %>% 
+  summarise(var.bw = variable.names()(bill.width, na.rm = T),
+            var.bl = variable.names()(bill.length, na.rm = T),
+            var.bd = variable.names()(bill.depth, na.rm = T)) %>% 
+  arrange(var.bd)variable.names()
+
+df.dap.genos.num %>% 
+  filter(Species !="Unknown" & Species!="hybrid" & Species!="bigbirds") %>% 
+  ggplot() + geom_histogram(aes(x = bill.depth, fill = Species)) +
+  theme_bw()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# estimate R2 each locus alone --------------------------------------------
+
+single_R2 <- function(species, target_loci, output.name){
+  
+  df.finch <- df.dap.genos.num %>% filter(Species == species)
+  
+  df.finch.sub <- df.finch %>% 
+    select("bill.PC1", "bill.PC2", 
+           "bill.length", "bill.depth", "bill.width",
+           all_of(target_loci))
+  
+  
+  df.finch.sub <- df.finch.sub %>% 
+    filter(!is.na(bill.width) & !is.na(bill.depth) & !is.na(bill.length))
+  
+  
+  # calculate PCs only for species filtered  --------------------------------
+  
+  beak.pca <- prcomp(df.finch.sub[,c("bill.depth", "bill.width", "bill.length")], center = T, scale = T)
+  summary(beak.pca)
+  
+  df.finch.sub <- cbind(df.finch.sub,beak.pca$x[,1:3])
+  #replace existing values (which was built from 4 species)
+  df.finch.sub$bill.PC1 <- df.finch.sub$PC1
+  df.finch.sub$bill.PC2 <- df.finch.sub$PC2
+  df.finch.sub$bill.PC3 <- df.finch.sub$PC3
+  
+  # plot effect sizes -------------------------------------------------------
+  
+  df.lm1 <- data.frame(NULL)
+  df.lm2 <- data.frame(NULL)
+  
+  for(locus in target_loci){
+    m <- summary(lm(unlist(df.finch.sub[,"bill.PC1"]) ~ unlist(df.finch.sub[,locus])))
+    i<-locus
+    df.lm1[i, "r2"] <- round(m$adj.r.squared, 3)
+    df.lm1[i, "pval"] <- m$coefficients[2,4] #pval
+    df.lm1[i, "coef"] <- m$coefficients[2,1] #coef
+    df.lm1[i, "n"] <- nrow(df.finch.sub)
+    df.lm1[i, "PC"] <- "PC1"
+    df.lm1[i, "locus"] <- locus
+    
+    m2 <- summary(lm(unlist(df.finch.sub[,"bill.PC2"]) ~ unlist(df.finch.sub[,locus])))
+    df.lm2[i, "r2"] <- round(m2$adj.r.squared, 3)
+    df.lm2[i, "pval"] <- m2$coefficients[2,4] #pval
+    df.lm2[i, "coef"] <- m2$coefficients[2,1] #coef
+    df.lm2[i, "n"] <- nrow(df.finch.sub)
+    df.lm2[i, "PC"] <- "PC2"
+    df.lm2[i, "locus"] <- locus
+  }
+  
+  df.lm <- rbind(df.lm1, df.lm2)
+  
+ 
+  # three dimensions --------------------------------------------------------
+  
+  p2 <- df.lm %>% 
+    ggplot(aes(label = round(r2, 2),x = locus, y = PC, fill = r2)) + 
+    geom_tile() +
+    geom_text() +
+    scale_fill_gradient(low = "yellow", high = "red", na.value = NA,
+                        limits = c(0,max(df.lm$r2))) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90),
+          axis.title = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          legend.position = "none")
+  
+  p2
+  ggsave(paste0("output/GEMMA/effect_sizes/PCs_R2_custom_",species,"_",output.name,"_long.pdf"), width = 11, height = 8.5)
+  
+  
+  #pivot wider next
+  df.effect.sizePCs.wide <- df.lm %>% 
+    select(-coef,-n) %>% 
+    pivot_wider(values_from = c(r2, pval,PC), names_from = PC)
+   
+  
+  df.effect.sizePCs.wide$pval_PC1.adjust <- p.adjust(df.effect.sizePCs.wide$pval_PC1, method = "BH")
+  df.effect.sizePCs.wide$pval_PC2.adjust <- p.adjust(df.effect.sizePCs.wide$pval_PC2, method = "BH")
+  df.effect.sizePCs.wide <- df.effect.sizePCs.wide %>% 
+    mutate(across(where(is.numeric), round, 3)) 
+  write_csv(df.effect.sizePCs.wide, paste0("output/GEMMA/effect_sizes/PCs_effect_size_custom_",species,"_",output.name,"_R2.csv"))
+  
+}
+
+single_R2("fortis", all_loci, "r2_all_loci")
+
+
+
+# plot r2 -----------------------------------------------------------------
+
+plot_ef <- function(es_path, output.name){
+  
+  df.es.wide <- read.csv(es_path)
+  
+  df.es.wide <- df.es.wide %>% arrange(r2_PC1) %>% mutate(order = 1:n())
+  df.es.wide$locus <- fct_reorder(df.es.wide$locus, df.es.wide$order)
+  
+  pPC1 <- ggplot(df.es.wide, aes(y = locus, x = r2_PC1)) +
+    geom_point() +
+    geom_point(data = subset(df.es.wide, pval_PC1.adjust < 0.05), color = "red") +
+    geom_vline(xintercept=0, color="black",  alpha=.5) +
+    theme_minimal()+
+    theme(text=element_text(size=18, color="black"))+
+    theme(panel.spacing = unit(1, "lines")) +
+    labs(y = "Locus", x = "R2 Bill PC1")
+  
+  df.es.wide <- df.es.wide %>% arrange(r2_PC2) %>% mutate(order = 1:n())
+  df.es.wide$locus <- fct_reorder(df.es.wide$locus, df.es.wide$order)
+  
+  pPC2 <- ggplot(df.es.wide, aes(y = locus, x = r2_PC2)) +
+    geom_point() +
+    geom_point(data = subset(df.es.wide, pval_PC2.adjust < 0.05), color = "red") +
+    geom_vline(xintercept=0, color="black",  alpha=.5) +
+    theme_minimal()+
+    theme(text=element_text(size=18, color="black"))+
+    theme(panel.spacing = unit(1, "lines")) +
+    labs(y = NULL, x = "Effect size Bill PC2")
+  
+  pPC1 + pPC2
+  ggsave(paste0("output/GEMMA/effect_sizes/R2_", output.name,".pdf"), width = 11, height = 8.5)
+  ggsave(paste0("output/GEMMA/effect_sizes/R2_", output.name,".png"), width = 11, height = 8.5)
+  
+}
+
+plot_ef("output/GEMMA/effect_sizes/PCs_effect_size_custom_fortis_r2_all_loci_R2.csv", "fortis_r2")
+
+
+
+
+
+
+
+#chr 21 and 22 much larger effect in complex model
+#drop one locus
+#ancestry:
+#higher correlation among loci in mixed ancestry individuals?
+#rerun EST among all loci remove ancestry > 0.2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# -------------------------------------------------------------------------
+
+df.fort <- df.all.genos %>% 
+  filter(Species == "fortis" & Island == "Daphne")
+
+names(df.fort)
+
+df.fort %>% 
+  ggplot() + 
+  geom_jitter(aes(x = anc_scan, y = ALX1.simple), width = 0.1) +
+  geom_boxplot(aes(x = anc_scan, y = ALX1.simple))
+
+ftable(df.fort$HMGA2.simple, df.fort$ALX1.simple)
+
+summary(lm(bill.PC2 ~ ALX1.simple, data = df.fort))
+
+df.fort <- df.fort %>% 
+  filter(!is.na(bill.width) & !is.na(bill.depth) & !is.na(bill.length))
+
+beak.pca <- prcomp(df.fort[,c("bill.depth", "bill.width", "bill.length")], center = T, scale = T)
+
+summary(beak.pca)
+
+df.fort$bill.PC1 <- beak.pca$x[,1]
+df.fort$bill.PC2 <- beak.pca$x[,2]
+  
+df.fort.early <- df.fort %>% 
+  filter(First.year.min.x < 2000)
+
+summary(lm(bill.PC2 ~ ALX1.simple, data = df.fort.early))
+
+df.fort.late<- df.fort %>% 
+  filter(First.year.min.x > 2000)
+
+summary(lm(bill.PC2 ~ ALX1.simple, data = df.fort.late))
+
+# realaimpo ---------------------------------------------------------------
+
+#library(relaimpo)
+
+
+#df.fort.f <- df.fort %>% filter(!is.na(ALX1.simple) & !is.na(HMGA2.simple) & !is.na(bill.PC1))
+#mPC1 <- lm(paste("bill.PC1 ~ ", test.order, sep = ""), data = df.fort, na.action = na.exclude)
+#summary(mPC1)
+#mPC1 <- lm(bill.PC1 ~ ALX1.simple + HMGA2.simple, data = df.fort.f, na.action = na.exclude)
+#
+#calc.relimp(mPC1, type = "lmg", na.action = na.exclude)
+
+# ------------------------------------------------------------------------- 
+
+df.dap.genos %>% 
+  filter(Species == "fortis" & Island=="Daphne") %>% 
+  select(ALX1.simple, HMGA2.simple) %>% ftable()
+
+df.dap.genos %>% 
+  filter(Species == "scandens" & Island == "Daphne") %>% 
+  select(ALX1.simple, HMGA2.simple) %>% ftable()
+
+df.scan <- df.dap.genos %>% 
+  filter(Species == "scandens")
+
+p.dap<- df.dap.genos %>% 
+  filter(Species == "fortis") %>% 
+  ggplot() + 
+    geom_boxplot(aes(x = ALX1.geno, y = bill.length/bill.depth)) +
+    geom_jitter(aes(x = ALX1.geno, y = bill.length/bill.depth), width = 0.2) +
+    theme_bw()
+
+p.dap
+
+
+#df.fort <- df.dap.genos %>% filter(Species == "fortis") 
+
+df.truth <- read.csv("data/geneflow_paper_genotypes/genotyped_HMGA2_ALX1_meaningful.unique.csv")
+df.truth <- df.truth %>% 
+  #mutate(HMGA2.label = paste(meaningful.unique, HMGA2.geno, sep = "-"),
+  #                              ALX1.label = paste(meaningful.unique, ALX1.geno, sep = "-")) %>% 
+  select(meaningful.unique, HMGA2.hap, ALX1.hap)
+
+df.fort <- left_join(df.fort, df.truth, by = "meaningful.unique")
+
+alx1.match <- tibble(ALX1.geno = c("P1P1","P2P2","P2P1", "PP", "B1P1", "B1P2", "B1B1"),
+                     ALX1.hap.simp = c("AA","AA","AA", "AA", "AB","AB", "BB"))
+df.fort <- left_join(df.fort, alx1.match, by = c("ALX1.hap" = "ALX1.geno"))
+
+p.truth <- df.fort %>% 
+  filter(!is.na(ALX1.hap) & Species == "fortis") %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = ALX1.hap, y = bill.PC2)) +
+  geom_jitter(aes(x = ALX1.hap, y = bill.PC2), width = .2) +
+  theme_bw()
+
+
+p.dap/p.truth
+
+
+# -------------------------------------------------------------------------
+unique(df.fort$ALX1.hap.simp)
+
+df.fort %>% 
+  filter(!is.na(ALX1.hap) & Species == "fortis") %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = ALX1.hap.simp, y = bill.PC2)) +
+  geom_jitter(aes(x = ALX1.hap.simp, y = bill.PC2), width = .2) +
+  theme_bw()
+
+summary(lm(bill.PC2 ~  ALX1.hap.simp, data = df.fort))
+summary(lm(bill.length/bill.depth ~  ALX1.hap.simp, data = df.fort))
+
+
+df.fort.taq <- df.fort %>% 
+  filter(!is.na(ALX1.hap.simp))
+summary(lm(bill.PC2 ~  ALX1.simple, data = df.fort.taq))
+
+df.fort.taq %>% 
+  select(ALX1.simple, ALX1.hap.simp) %>% 
+  filter(ALX1.simple!=ALX1.hap.simp)
+
+
+# is it PCs that are off? -------------------------------------------------
+library(readxl)
+V2.mdb <- read_excel("/Users/erikenbody/Dropbox/Shared_Uppsala/Darwin\'s\ Finch\ shared/Finch_Database_V2.xlsx", guess_max = 1048576)
+df.fort2 <- df.all.genos %>% 
+  filter(Species == "fortis" & Island == "Daphne")
+msattPCs <- V2.mdb %>% dplyr::select(meaningful.unique, msatt.PC1.beak, msatt.PC2.beak)
+
+df.fort2 <- left_join(df.fort2, msattPCs, by= "meaningful.unique")
+
+pc_corr1 <- df.fort2 %>% 
+  ggplot() + 
+  geom_point(aes(x = msatt.PC1.beak, bill.PC1))
+pc_corr2 <- df.fort2 %>% 
+  ggplot() + 
+  geom_point(aes(x = msatt.PC2.beak, bill.PC2))
+pc_corr1 + pc_corr2
+
+
+df.fort2 %>% 
+  ggplot() + 
+  geom_point(aes(x = bill.length/bill.depth, bill.PC2))
+
+df.fort2 %>% 
+  ggplot() + 
+  geom_point(aes(x = bill.length/bill.depth, msatt.PC2.beak))
+

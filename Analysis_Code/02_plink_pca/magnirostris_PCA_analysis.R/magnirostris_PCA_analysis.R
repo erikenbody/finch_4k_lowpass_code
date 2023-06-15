@@ -18,7 +18,7 @@ full.val <- fread("data/plink_pca/all_highcov_lowcov/chr5_region_Daphne_3species
 full.val$prop <- (full.val$V1 / (sum(full.val$V1))) * 100
 
 i.full.pca <- full.pca %>% left_join(df.dbm.2, by = c("#IID" = "meaningful.unique")) %>% 
-  select(`#IID`,TubeNum, Island,Genus, Page.01, Slot.02, NUM.07, AltNum.08, mother, social.father, EP.father, Symbol, UU_notes, `DNA.dilution.plate…`, `Pool (2020)`, First.year.min, Last.year, genetic.sex, Genotype, Category, Species, starts_with("msatt"), starts_with("PC"), starts_with("bill"), meaningful.unique = `#IID`) %>% 
+  dplyr::select(`#IID`,TubeNum, High_coverage_project,Island,Genus, Page.01, Slot.02, NUM.07, AltNum.08, mother, social.father, EP.father, Symbol, UU_notes, `DNA.dilution.plate…`, `Pool (2020)`, First.year.min, Last.year, genetic.sex, Genotype, Category, Species, starts_with("msatt"), starts_with("PC"), starts_with("bill"), meaningful.unique = `#IID`) %>% 
   mutate(species.ext = ifelse(Species == "hybrid" & !grepl("f", Genotype), "fortisxscandens",
                               ifelse(Species == "hybrid" & !grepl("S", Genotype), "fortisxfuliginosa", 
                                      ifelse(Species == "hybrid", "trihybrid", Species))),
@@ -86,18 +86,19 @@ ggplot(mag.pca) + geom_point(aes(x = PC1, y = PC2, color = grouping), alpha = 0.
 mag.pca <- mag.pca %>% mutate(Daphne.grouping = ifelse(grouping == "A", "Daphne_A",
                                             ifelse(grouping == "B" & Island == "Daphne", "Daphne_B", Island)))
 
-ggplot(mag.pca) + geom_point(aes(x = PC1, y = PC2, color = Daphne.grouping), alpha = 0.8, size = 4) + theme_bw() +
+ggplot(mag.pca) + 
+  geom_point(aes(x = PC1, y = PC2, color = Daphne.grouping), alpha = 0.8, size = 4) + theme_bw() +
   theme(text = element_text(size = 14))
 ggsave("output/plink_pca/magnirostris_analysis/Daphne_magnirostris_groupings_PCA.png", width = 12, height = 10)
 
 mag.pca.out <- mag.pca %>% 
-  select(Daphne.grouping, meaningful.unique, TubeNum, Page.01, Slot.02, NUM.07, AltNum.08, 
+  dplyr::select(Daphne.grouping, meaningful.unique, TubeNum, Page.01, Slot.02, NUM.07, AltNum.08, 
          Species, Island, bill.depth, bill.width, bill.length, 
          First.year.min, Last.year, genetic.sex, mother, social.father, EP.father, PC1, PC2)
 #dir.create("output/plink_pca/magnirostris_analysis")
 write.csv(mag.pca.out, "output/plink_pca/magnirostris_analysis/magnirostris_Daphne_groupings.csv", na = "")
 mag.pca.out %>% filter(Island == "Daphne") %>% 
-  select(meaningful.unique, Daphne.grouping) %>% 
+  dplyr::select(meaningful.unique, Daphne.grouping) %>% 
   write_tsv("output/plink_pca/magnirostris_analysis/Daphne_magnirostris_groupings_for_pixy.txt", col_names = F)
 
 mag.pca.out %>% filter(PC1 > 0) 
@@ -116,3 +117,27 @@ t.test(mag.pca.dap$bill.depth ~ mag.pca.dap$Daphne.grouping)
 mag.pca.dap %>% 
   group_by(Daphne.grouping) %>% 
   summarise(meansize = mean((bill.depth + bill.width + bill.length), na.rm = T))
+
+# -------------------------------------------------------------------------
+
+# magnirostris ------------------------------------------------------------
+
+#only use high coverage ref panel
+mag_samps <- mag.pca %>% 
+  filter(Island == "Daphne" &Species == "magnirostris" | 
+           Island!="Daphne" & Species == "magnirostris" & !is.na(High_coverage_project)) %>% 
+  filter(meaningful.unique!="02Dap9389") #remove a sample that is likely some kind of immigrant hybrid
+
+mag_samps %>% 
+  filter(Species == "magnirostris") %>% 
+  ggplot() + 
+  geom_point(aes(x = PC1, y = PC2, color = Daphne.grouping), alpha = 0.8, size = 4) + 
+  theme_bw() +
+  theme(text = element_text(size = 14),
+        legend.title = element_blank()) +
+  #geom_text_repel(segment.size = 0.05, size = 9, aes(label = label2, color = species.grouping)) +
+  xlab(paste0("PC1", ": ", round(full.val[1,2],1),"% variance")) +
+  ylab(paste0("PC2", ": ", round(full.val[2,2],1),"% variance")) +
+  scale_colour_brewer(palette = "Set2") 
+ggsave("output/plink_pca/magnirostris_from_whole_sample_PCA.png", width = 12, height = 10)
+

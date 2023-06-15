@@ -1,5 +1,6 @@
 library(tidyverse)
 library(broom)
+library(patchwork)
 #setup data
 df.all.genos <- read.csv("output/combined_genotypes/Darwins_finches_combined_genotype_calls.csv", na.strings = "")
 
@@ -19,8 +20,8 @@ df.all.genos %>%
 
 # species ----------------------------------------------------------------
 
-#df.fort4lm <- df.all.genos %>% filter(Species == "fortis" & Island == "Daphne")
-df.scan4lm <- df.all.genos %>% filter(grm_cluster == "cluster1" & Island == "Daphne")
+df.fort4lm <- df.all.genos %>% filter(Species == "fortis" & Island == "Daphne")
+#df.scan4lm <- df.all.genos %>% filter(grm_cluster == "cluster1" & Island == "Daphne")
 
 fort_pc1 <- tidy(lm(bill.PC1.sp ~ anc_scan + anc_fuli, data = df.fort4lm))
 fort_pc1$pheno <- "PC1"
@@ -66,7 +67,7 @@ anc2 <- df.fort4lm.w %>% filter(Species == "anc_fuli")
 mix_plot <- function(titlel = "G. fortis", ylabel = "Bill Size (PC1)", 
                      color1 = scan.color, color2 = fuli.color,
                      sp1 = "G. fuliginosa", sp2 = "G. scandens",
-                     ypos1 = 1.3, ypos2 = -1.3, pheno = "bill.PC1.sp"){
+                     ypos1 = 1.3, ypos2 = -1.3, pheno = "bill.PC1.sp", xpos = 0.6){
   mix_plot <- ggplot(data = anc1, aes(x = ancestry, y = !!sym(pheno)),) + 
     geom_point(data = anc1, aes(x = ancestry, y = !!sym(pheno), color = `Ancestry source`),
                alpha = 0.8) + 
@@ -76,14 +77,18 @@ mix_plot <- function(titlel = "G. fortis", ylabel = "Bill Size (PC1)",
                alpha = 0.8) + 
     geom_smooth(data = anc2, aes(x = ancestry, y = !!sym(pheno), color = `Ancestry source`),
                 method = "lm", se=FALSE) +
-    stat_regline_equation(data = anc1, label.y = ypos1, label.x = .65, aes(label = ..eq.label..,
+    stat_regline_equation(data = anc1, label.y = ypos1, label.x = xpos, aes(label = ..eq.label..,
                                                                            color = `Ancestry source`), show.legend = FALSE) +
-    stat_regline_equation(data = anc1, label.y = ypos1 - 0.3, label.x = .65, aes(label = ..rr.label..,
+    #stat_regline_equation(data = anc1, label.y = ypos1 - 0.3, label.x = .65, aes(label = ..rr.label..,
+    #                                                                             color = `Ancestry source`), show.legend = FALSE) +
+    stat_cor(data = anc1, label.y = ypos1 - 0.3, label.x = xpos, aes(label = paste(..rr.label.., ..p.label.., sep = "*`,`~"),
+                                                                    color = `Ancestry source`), show.legend = F) +
+    stat_regline_equation(data = anc2, label.y = ypos2 + 0.3, label.x = xpos, aes(label = ..eq.label..,
                                                                                  color = `Ancestry source`), show.legend = FALSE) +
-    stat_regline_equation(data = anc2, label.y = ypos2 + 0.3, label.x = .65, aes(label = ..eq.label..,
-                                                                                 color = `Ancestry source`), show.legend = FALSE) +
-    stat_regline_equation(data = anc2, label.y = ypos2, label.x = .65, aes(label = ..rr.label..,
-                                                                           color = `Ancestry source`), show.legend = FALSE) +
+    #stat_regline_equation(data = anc2, label.y = ypos2, label.x = .65, aes(label = ..rr.label..,
+    #                                                                      color = `Ancestry source`), show.legend = FALSE) +
+    stat_cor(data = anc2, label.y = ypos2 - 0.3, label.x = xpos, aes(label = paste(..rr.label.., ..p.label.., sep = "*`,`~"),
+                                                                    color = `Ancestry source`), show.legend = F) +
     theme_bw() +
     labs(x = "Ancestry", y = ylabel, title = titlel) +
     scale_color_manual(values = c(color1, color2)) +
@@ -116,6 +121,7 @@ p.scan2 <- mix_plot(color2 = fuli.color, color1 = fort.color, pheno = "bill.PC2.
          titlel = "G. scandens", ylabel = "Bill Shape (PC2)")
 
 (p.fort1 + p.scan1) / (p.fort2 + p.scan2) + plot_annotation(tag_levels = 'A')
+
 ggsave("output/admixture/ancestry_phenotype_plots.png", width = 12, height = 10)
 
 # -------------------------------------------------------------------------

@@ -93,8 +93,6 @@ summary(lm4)
 
 plot(df.merge2.fort$bill.PC1.sp_mean ~ df.merge2.fort$G07)
 
-tidy(lm4)
-
 
 # -------------------------------------------------------------------------
 
